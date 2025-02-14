@@ -7,6 +7,7 @@ import warnings
 from glob import glob
 from multiprocessing import Pool
 from pathlib import Path
+from subprocess import CalledProcessError
 import openmc
 import openmc_uq
 
@@ -89,7 +90,7 @@ with Pool(n_cores) as pool:
         try:
             RN = pool.apply_async(openmc_uq.sample_nuclide_sandy, func_args)
             random_nuc.append(RN)
-        except ChildProcessError:
+        except (OSError, CalledProcessError):
             warnings.warn("Failed to sample nuclide {}".format(nuc))
 
     for r in random_nuc:
@@ -100,11 +101,11 @@ with Pool(n_cores) as pool:
 
 # Run openmc with random files
 try:
-    openmc_uq.run_openmc(openmc_xml_dir, random_nuc, cross_sections_xml=XS_LIB, threads=n_cores,run_dir=run_dir)
+    openmc_uq.run_openmc(openmc_xml_dir, random_nuc, cross_sections_xml=XS_LIB, n_threads=n_cores,run_dir=run_dir)
     results,errors = results_from_statepoint(scores)
     weight=1
 
-except ChildProcessError(error_msg):
+except ChildProcessError:
     # Handle failure
     results = [0.0 for score in scores]
     errors = [0.0 for score in scores]

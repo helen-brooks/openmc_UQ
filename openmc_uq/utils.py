@@ -1,24 +1,19 @@
-import os
-from sandy import Endf6
-import re
 import numpy as np
-
+import os
+import re
+import warnings
 from pathlib import Path
-
+from sandy import Endf6
 import openmc
 
 ###
 #   Pattern matches nuclides with ENDF files, and returns their path
 ###
 def get_nuclide_paths(endf_path, nuclides):
-    print(f"######################################")
-    print(f"##### SEARCHING FOR  ENDF FILES  #####")
-    print("\n")
-
     file_list = np.array(os.listdir(endf_path))
 
     if len(file_list) == 0:
-        raise Exception(f"{endf_path} is empty")
+        raise OSError(f"{endf_path} is empty")
 
     nuclide_paths = []
 
@@ -33,8 +28,7 @@ def get_nuclide_paths(endf_path, nuclides):
 
         if len(this_file) == 0:
             nuclide_paths.append("")
-            print(f"No files matched for {nuc}")
-            print("\n")
+            raise OSError(f"No files matched for {nuc}")
 
         elif len(this_file) == 1:
             nuc_path = endf_path + '/' + this_file[0]
@@ -45,9 +39,9 @@ def get_nuclide_paths(endf_path, nuclides):
         elif len(this_file) > 1:
             shortest = min(this_file, key=len)
             nuclide_paths.append(endf_path + '/' + shortest)
-            print(f"Multiple files matched for {nuc}: {this_file}")
-            print(f"Using shortest: {shortest}:")
-            print("\n")
+            warning_message=f"Multiple files matched for {nuc}: {this_file}"
+            warning_message=warning_message+f"Using shortest: {shortest}"
+            warnings.warn(warning_message)
             
     return nuclide_paths
 
@@ -80,27 +74,20 @@ def process_with_njoy(Nuclide, endf_path):
 #   Replaces the nuclides in mat.xml with the random nuclides of NuclideStream
 #   Returns openmc materials object with changed nuclides
 ##
-def replace_nuclide_material(nuc, newNuc):
-    fin = open("materials.xml", "rt")
-    fout = open("materials1.xml", "wt")
+def replace_string_in_file(nuc, newNuc,filename,cwd=None):
+    if not cwd:
+        cwd=os.getcwd()
+
+    file_orig=os.path.join(cwd,filename)
+    file_tmp=os.path.join(cwd,"tmp"+filename)
+    fin = open(file_orig, "rt")
+    fout = open(file_tmp, "wt")
 
     for line in fin:
-	#read replace the string and write to output file
-	    fout.write(line.replace(nuc, newNuc))
+        #read replace the string and write to output file
+        fout.write(line.replace(nuc, newNuc))
     
     fin.close()
     fout.close()
-    os.system("mv materials1.xml materials.xml")
-
-
-def replace_nuclide_tally(nuc, newNuc):
-    fin = open("tallies.xml", "rt")
-    fout = open("tallies1.xml", "wt")
-
-    for line in fin:
-	#read replace the string and write to output file
-	    fout.write(line.replace(nuc, newNuc))
-    
-    fin.close()
-    fout.close()
-    os.system("mv tallies1.xml tallies.xml")
+    os.remove(file_orig)
+    os.rename(file_tmp,file_orig)
