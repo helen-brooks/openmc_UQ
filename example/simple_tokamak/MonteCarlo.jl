@@ -78,24 +78,32 @@ function openmc_extractor(index,output_file,qoi_name)
     return extractor
 end
 
-# Loop over scores
+# Define our extractors
+extractor_list=Vector{Extractor}()
 solver_output = solver_inputs["output"]
+
+# Remember, Julia doesn't use zero-indexing
+weight_extractor = openmc_extractor(1,solver_output,"weight")
+push!(extractor_list, weight_extractor)
+
+# Loop over scores
 scores = solver_inputs["scores"]
 num_scores = length(scores)
-extractor_list=Vector{Extractor}()
+
 for i_score = 1:num_scores
     qoi = scores[i_score]
     # Remember, Julia doesn't use zero-indexing
-    data_index = 2*i_score-1
+    data_index = 2*i_score
     qoi_extractor = openmc_extractor(data_index,solver_output,qoi)
     push!(extractor_list, qoi_extractor)
 
     qoi_std = string(qoi,"_std")
     # Remember, Julia doesn't use zero-indexing
-    std_index = 2*i_score
+    std_index = 2*i_score+1
     qoi_extractor = openmc_extractor(std_index,solver_output,qoi_std)
     push!(extractor_list, qoi_extractor)
 end
+
 ############################################################################
 # Define the "solver".
 solver = Solver(solver_exe, solver_config; args="")
@@ -114,8 +122,14 @@ model = ExternalModel(
     source_dir, solver_config, extractor_list, solver; workdir=workdir, formats=numberformats, scheduler = slurm
 )
 ############################################################################
-# Define Limistate function for reliability analysis.
+# Define a function to pass to probability of failure method.
+# If any runs failed this
 function limitstate(df)
+    return reduce(vcat, df.weight).-1.0
+end
+
+# Function to compute performance
+function perf(df)
     return reduce(vcat, df[:,reliability_qoi_name]).-reliability_qoi_criteria
 end
 ############################################################################
@@ -152,6 +166,7 @@ println("Starting Monte Carlo simulation")
 @time pf, pf_std, samples = probability_of_failure(model, limitstate, random_variable_list, sampling)
 println("Monte Carlo simulation complete")
 ############################################################################
+
 # Extract reliability results
 qoi_results = samples[:,reliability_qoi_name]
 qoi_mean = mean(qoi_results)
@@ -173,7 +188,7 @@ println("******************************************************************")
 # Write summary to text file
 println("Writing summary to $summary_file")
 file = open(summary_file, "w")
-write(file, "pf = $pf \n pf_std = $pf_std")
+write(file, "pf = $pf pf_std = $pf_std")
 close(file)
 ############################################################################
 # Save results to HDF5

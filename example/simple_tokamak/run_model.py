@@ -1,13 +1,44 @@
 #!/usr/bin/env python
 import argparse
-from glob import glob
 import json
-from multiprocessing import Pool
 import os
-from pathlib import Path
 import sys
+import warnings
+from glob import glob
+from multiprocessing import Pool
+from pathlib import Path
 import openmc
 import openmc_uq
+
+
+def results_from_statepoint(scores):
+    # Lift tallies from statepoint file
+    n_max_batches=0
+    template=run_dir+'/statepoint.*.h5'
+    files=glob(template)
+    file_to_open=""
+    for filename in files:
+        stem=filename.replace('.h5','')
+        n_batches=int(stem.replace('statepoint.',''))
+        if n_batches > n_max_batches:
+            n_max_batches=n_batches
+            file_to_open=filename
+
+
+    print("Opening statepoint file: ",file_to_open)
+    sp = openmc.StatePoint(file_to_open)
+
+    results=[]
+    errors=[]
+    for score in scores:
+        tally = sp.get_tally(name=score)
+        df = tally.get_pandas_dataframe()
+        mean = df['mean'].sum()
+        std = df['std. dev.'].sum()
+        results.append(mean)
+        errors.append(std)
+
+    return results,errors
 
 parser = argparse.ArgumentParser()
 parser.add_argument("input_file")
@@ -55,8 +86,11 @@ with Pool(n_cores) as pool:
     for (i, nuc) in enumerate(nuclides):
 
         func_args = (nuc, endf_path, int(seeds[i]))
-        RN = pool.apply_async(openmc_uq.sample_nuclide_sandy, func_args)
-        random_nuc.append(RN)
+        try:
+            RN = pool.apply_async(openmc_uq.sample_nuclide_sandy, func_args)
+            random_nuc.append(RN)
+        except ChildProcessError:
+            warnings.warn("Failed to sample nuclide {}".format(nuc))
 
     for r in random_nuc:
         r.wait()
@@ -64,31 +98,25 @@ with Pool(n_cores) as pool:
     for (i, r) in enumerate(random_nuc):
         random_nuc[i] = r.get()
 
-#  Run openmc with random files
-openmc_uq.run_openmc(openmc_xml_dir, random_nuc, cross_sections_xml=XS_LIB, threads=n_cores,run_dir=run_dir)
+# Run openmc with random files
+try:
+    openmc_uq.run_openmc(openmc_xml_dir, random_nuc, cross_sections_xml=XS_LIB, threads=n_cores,run_dir=run_dir)
+    results,errors = results_from_statepoint(scores)
+    weight=1
 
-# Lift tallies from statepoint file
-n_max_batches=0
-template=run_dir+'/statepoint.*.h5'
-files=glob(template)
-file_to_open=""
-for filename in files:
-    stem=filename.replace('.h5','')
-    n_batches=int(stem.replace('statepoint.',''))
-    if n_batches > n_max_batches:
-        n_max_batches=n_batches
-        file_to_open=filename
+except ChildProcessError(error_msg):
+    # Handle failure
+    results = [0.0 for score in scores]
+    errors = [0.0 for score in scores]
+    # Setting weight to zero means we won't count this run later
+    weight=0
 
-print("Opening statepoint file: ",file_to_open)
-sp = openmc.StatePoint(file_to_open)
-
-result_str=""
-for score in scores:
-    tally = sp.get_tally(name=score)
-    df = tally.get_pandas_dataframe()
-    mean = df['mean'].sum()
-    std = df['std. dev.'].sum()
-    tally_str = "{} {} ".format(mean,std)
+# Now write to file
+result_str="{}".format(weight)
+for i_score in range(len(scores)):
+    mean=results[i_score]
+    std=errors[i_score]
+    tally_str = " {} {}".format(mean,std)
     result_str=result_str+tally_str
 
 #   Store results of interest to openmc.out

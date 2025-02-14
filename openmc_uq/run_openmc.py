@@ -1,11 +1,15 @@
 import os
+import subprocess
 from pathlib import Path
 from shutil import copyfile
 import openmc.data
 from .utils import replace_nuclide_tally, replace_nuclide_material
 
 def run_openmc(openmc_xml_dir, random_nuclides, cross_sections_xml,
-               threads = 1,
+               n_tasks=1,
+               n_tasks_per_node=1,
+               n_threads = 1,
+               max_time=86400,
                run_dir="openmc_sim"):
 
     # ==============================================================================
@@ -24,15 +28,13 @@ def run_openmc(openmc_xml_dir, random_nuclides, cross_sections_xml,
     input_files  = ["materials.xml", "settings.xml", "tallies.xml", "geometry.xml"]
 
     for file in input_files:
-        copyfile(openmc_xml_dir/file, out_dir/file)    
+        copyfile(openmc_xml_dir/file, out_dir/file)
 
     for file in os.listdir(openmc_xml_dir):
         if file.endswith(".h5m"):
             copyfile(openmc_xml_dir/file, out_dir/file)
         if file.endswith(".e"):
-            copyfile(openmc_xml_dir/file, out_dir/file)    
-
-    os.chdir(out_dir)
+            copyfile(openmc_xml_dir/file, out_dir/file)
 
     # ==============================================================================
     # Create xml library
@@ -61,11 +63,27 @@ def run_openmc(openmc_xml_dir, random_nuclides, cross_sections_xml,
     materials.export_to_xml()
 
     #output = openmc.run(threads = threads)
-    openmc_command = f"mpirun -np 1 -ppn 1 --bind-to none openmc -s {threads}"
-    os.system(openmc_command)
+    #TODO make aware of which mpi flavour! (ppn is intel)
+    openmc_command = "mpirun -np {} -ppn {}  --bind-to none openmc -s {}".format(
+        n_tasks,
+        n_tasks_per_node,
+        n_threads)
+    args=shlex.split(openmc_command)
+    log_file = "openmc.out"
+    err_file = "openmc.err"
+    process = subprocess.Popen(args,stdout=log_file,stderr=err_file,cwd=out_dir)
 
-    os.chdir(working_dir)
+    # Check for success/failure
+    # Default max time is 24 hours
+    try:
+        outs, errs = process.communicate(timeout=max_time)
+        rc = process.returncode
+    except TimeoutExpired:
+        process.kill()
+        outs, errs = process.communicate()
 
-    #return output
-
-
+    # OpenMC failed
+    if rc!=0:
+        # More helpful error message?
+        error_msg="OpenMC failed. See {} for details.".format(err_file)
+        raise ChildProcessError(error_msg)
