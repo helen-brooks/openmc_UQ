@@ -24,20 +24,25 @@ def sample_nuclide_sandy(nuclide, endf_path, seed33, temperature=293.6):
 
     # Run sandy
     sandy_command = "python3 -m sandy.sampling {} --samples 1 --outname {} --S33 {} --mf 33 --acer --temperature {}".format(nuclide_file,acetape,seed33,temperature)
-    log_file = "sandy_sample_log_{}_{}_{}.out".format(nuclide,seed33,temperature)
-    err_file = "sandy_sample_log_{}_{}_{}.err".format(nuclide,seed33,temperature)
     args = shlex.split(sandy_command)
-    process = subprocess.Popen(args,stdout=log_file,stderr=err_file)
-
-    # Check for success/failure (handle exception if process hangs)
+    process = subprocess.Popen(args,capture_output=True)
+    # Obtain return code (kill if program hangs)
     try:
-        outs, errs = process.communicate(timeout=300)
+        stdout, stderr = process.communicate(timeout=300)
         rc = process.returncode
     except TimeoutExpired:
         process.kill()
-        outs, errs = process.communicate()
+        stdout, stderr = process.communicate()
 
-    # Sandy failed!
+    # Write logs
+    log_file = "sandy_sample_log_{}_{}_{}.out".format(nuclide,seed33,temperature)
+    err_file = "sandy_sample_log_{}_{}_{}.err".format(nuclide,seed33,temperature)
+    with open(log_file, 'w') as f:
+        f.write(stdout)
+    with open(err_file, 'w') as f:
+        f.write(stderr)
+
+    # Check for success/failure
     if rc!=0:
         error_msg="Sandy failed to sample for nuclide: {} seed33: {} temperature: {}".format(nuclide,seed33,temperature)
         raise ChildProcessError(error_msg)

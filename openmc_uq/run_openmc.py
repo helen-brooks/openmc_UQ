@@ -69,20 +69,26 @@ def run_openmc(openmc_xml_dir, random_nuclides, cross_sections_xml,
         n_tasks_per_node,
         n_threads)
     args=shlex.split(openmc_command)
-    log_file = "openmc.out"
-    err_file = "openmc.err"
-    process = subprocess.Popen(args,stdout=log_file,stderr=err_file,cwd=out_dir)
+    process = subprocess.Popen(args,,capture_output=True,cwd=out_dir)
 
-    # Check for success/failure
+    # Obtain return code (kill if program hangs)
     # Default max time is 24 hours
     try:
-        outs, errs = process.communicate(timeout=max_time)
+        stdout, stderr = process.communicate(timeout=max_time)
         rc = process.returncode
     except TimeoutExpired:
         process.kill()
-        outs, errs = process.communicate()
+        stdout, stderr = process.communicate()
 
-    # OpenMC failed
+    # Write logs
+    log_file = "run_openmc.out"
+    err_file = "run_openmc.err"
+    with open(log_file, 'w') as f:
+        f.write(stdout)
+    with open(err_file, 'w') as f:
+        f.write(stderr)
+
+    # Check for success/failure
     if rc!=0:
         # More helpful error message?
         error_msg="OpenMC failed. See {} for details.".format(err_file)
