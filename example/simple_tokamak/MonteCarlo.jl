@@ -172,6 +172,16 @@ num_success = sum(weight_results)
 num_failures = num_samples - num_success
 prop_failed = num_failures / num_samples
 ############################################################################
+# Remove data for failed runs
+samples.check_missing = [ weight==0 ? missing : weight for weight in samples.weight]
+dropmissing!(samples)
+n_rows=nrows(samples)
+if n_rows ==0
+  error("All samples failed.")
+else
+  println("Aggregating samples.")
+end
+############################################################################
 # Extract reliability results
 qoi_results = samples[:,reliability_qoi_name]
 qoi_mean = mean(qoi_results)
@@ -186,11 +196,6 @@ println("******************************************************************")
 println("Number successful samples: $num_success / $num_samples")
 println("Number failed samples: $num_failures / $num_samples")
 println("Proportion of failed samples: $prop_failed")
-
-println("Probability of failure standard deviation: $pf_std")
-println("Probability of model run failure: $pf")
-println("Probability of failure standard deviation: $pf_std")
-
 println("QOI mean: $qoi_mean")
 println("QOI std: $qoi_std")
 println("QOI 95% confidence interval: [$lower_quantile, $upper_quantile]")
