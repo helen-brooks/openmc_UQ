@@ -34,7 +34,6 @@ def get_nuclide_paths(endf_path, nuclides):
             nuc_path = endf_path + '/' + this_file[0]
             nuclide_paths.append(nuc_path)
             print(f"Using {this_file[0]} for {nuc}")
-            print("\n")
 
         elif len(this_file) > 1:
             shortest = min(this_file, key=len)

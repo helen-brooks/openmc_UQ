@@ -39,6 +39,9 @@ def run_openmc(openmc_xml_dir, random_nuclides, cross_sections_xml,
     lib = lib.from_xml(cross_sections_xml)  # Gets current
 
     for nuc in random_nuclides:
+        # TODO check for correct type rather than just None
+        if not nuc:
+            raise TypeError("User provided nuclide has None type.")
         lib.register_file(nuc.path)
 
     post = out_dir / "cross_sections_rand.xml"
@@ -46,7 +49,6 @@ def run_openmc(openmc_xml_dir, random_nuclides, cross_sections_xml,
 
     # ==============================================================================
     # Change openmc inputs
-
     for inputfile in ["materials.xml","tallies.xml"]:
         for nuc in random_nuclides:
             replace_string_in_file(nuc.nuclide, nuc.perturbed_name, inputfile, out_dir)
@@ -55,35 +57,23 @@ def run_openmc(openmc_xml_dir, random_nuclides, cross_sections_xml,
     materials.cross_sections = str(post)
     materials.export_to_xml(out_dir /"materials.xml")
 
-    #output = openmc.run(threads = threads)
-    #TODO make aware of which mpi flavour! (ppn is intel)
+    # Define openmc run command
+    # TODO make aware of which mpi flavour! (ppn is intel)
     openmc_command = "mpirun -np {} -ppn {}  --bind-to none openmc -s {}".format(
         n_tasks,
         n_tasks_per_node,
         n_threads)
     args=shlex.split(openmc_command)
-    print("Running openmc in {}".format(out_dir))
-    process = subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE,cwd=out_dir)
 
-    # Obtain return code (kill if program hangs)
-    # Default max time is 24 hours
-    try:
-        stdout, stderr = process.communicate(timeout=max_time)
-        rc = process.returncode
-    except TimeoutExpired:
-        process.kill()
-        stdout, stderr = process.communicate()
-
-    # Write logs
-    log_file = "run_openmc.out"
+    # Open log files and run
+    log_stem= "run_openmc"
+    out_file = os.path.join(out_dir, log_stem+".out")
     err_file = "run_openmc.err"
-    with open(log_file, 'w') as f:
-        f.write(stdout)
-    with open(err_file, 'w') as f:
-        f.write(stderr)
+    err_file = os.path.join(out_dir, log_stem+".err")
+    with open(out_file, 'w') as fout:
+        with open(err_file, 'w') as ferr:
+            print("Running openmc in {}".format(out_dir))
+            process = subprocess.run(args,stdout=fout,stderr=ferr,cwd=out_dir)
 
-    # Check for success/failure
-    if rc!=0:
-        # More helpful error message?
-        error_msg="OpenMC failed. See {} for details.".format(err_file)
-        raise ChildProcessError(error_msg)
+    # Check for success/failure, raise CalledProcessError on fail
+    process.check_returncode()

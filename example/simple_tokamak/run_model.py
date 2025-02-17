@@ -15,20 +15,20 @@ import openmc_uq
 def results_from_statepoint(scores):
     # Lift tallies from statepoint file
     n_max_batches=0
-    template=run_dir+'/statepoint.*.h5'
+    file_root=run_dir+'/statepoint.'
+    suffix='.h5'
+    template=file_root+'*'+suffix
     files=glob(template)
     file_to_open=""
     for filename in files:
-        stem=filename.replace('.h5','')
-        n_batches=int(stem.replace('statepoint.',''))
+        stem=filename.replace(suffix,'')
+        n_batches=int(stem.replace(file_root,''))
         if n_batches > n_max_batches:
             n_max_batches=n_batches
             file_to_open=filename
 
-
     print("Opening statepoint file: ",file_to_open)
     sp = openmc.StatePoint(file_to_open)
-
     results=[]
     errors=[]
     for score in scores:
@@ -82,30 +82,35 @@ n_cores = int(inputs_dict["n_cores"])
 print(f"Sampling sandy with n_cores={n_cores}")
 
 print("Beginning NJOY processing")
+n_nuclides=len(nuclides)
+async_results=[None]*n_nuclides
+random_nuc=[None]*n_nuclides
 with Pool(n_cores) as pool:
-    random_nuc = []
     for (i, nuc) in enumerate(nuclides):
-
         func_args = (nuc, endf_path, int(seeds[i]))
-        try:
-            RN = pool.apply_async(openmc_uq.sample_nuclide_sandy, func_args)
-            random_nuc.append(RN)
-        except (OSError, CalledProcessError):
-            warnings.warn("Failed to sample nuclide {}".format(nuc))
+        result = pool.apply_async(openmc_uq.sample_nuclide_sandy, func_args)
+        async_results[i] = result
 
-    for r in random_nuc:
+    for r in async_results:
         r.wait()
 
-    for (i, r) in enumerate(random_nuc):
-        random_nuc[i] = r.get()
+    for (i, r) in enumerate(async_results):
+        try:
+            # This should reraise any exceptions
+            random_nuc[i] = r.get()
+        except (OSError, CalledProcessError):
+            warnings.warn("Failed to sample nuclide {}".format(nuc))
 
 # Run openmc with random files
 try:
     openmc_uq.run_openmc(openmc_xml_dir, random_nuc, cross_sections_xml=XS_LIB, n_threads=n_cores,run_dir=run_dir)
+    # Post-processing of quantities of interest
     results,errors = results_from_statepoint(scores)
+    # Set weight to indicate success
     weight=1
 
-except ChildProcessError:
+except (TypeError, CalledProcessError):
+    warnings.warn("OpenMC run failed. Setting weight to zero.")
     # Handle failure
     results = [0.0 for score in scores]
     errors = [0.0 for score in scores]
