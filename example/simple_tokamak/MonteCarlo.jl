@@ -1,4 +1,4 @@
-using UncertaintyQuantification, DelimitedFiles, HDF5, StatsBase, Plots, JSON
+using UncertaintyQuantification, DelimitedFiles, HDF5, StatsBase, Plots, JSON, DataFrames
 
 ############################################################################
 ## Things to un-hardcode
@@ -175,7 +175,7 @@ prop_failed = num_failures / num_samples
 # Remove data for failed runs
 samples.check_missing = [ weight==0 ? missing : weight for weight in samples.weight]
 dropmissing!(samples)
-n_rows=nrows(samples)
+n_rows=nrow(samples)
 if n_rows ==0
   error("All samples failed.")
 else
