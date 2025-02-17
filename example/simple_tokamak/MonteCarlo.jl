@@ -166,7 +166,12 @@ println("Starting Monte Carlo simulation")
 @time pf, pf_std, samples = probability_of_failure(model, limitstate, random_variable_list, sampling)
 println("Monte Carlo simulation complete")
 ############################################################################
-
+# Find out how many jobs failed
+weight_results = samples.weight
+num_success = sum(weight_results)
+num_failures = num_samples - num_success
+prop_failed = num_failures / num_samples
+############################################################################
 # Extract reliability results
 qoi_results = samples[:,reliability_qoi_name]
 qoi_mean = mean(qoi_results)
@@ -178,8 +183,14 @@ upper_quantile = quantile(qoi_results, 0.975)
 println("******************************************************************")
 println("Summary:")
 println("******************************************************************")
-println("Probability of failure: $pf")
+println("Number successful samples: $num_success / $num_samples")
+println("Number failed samples: $num_failures / $num_samples")
+println("Proportion of failed samples: $prop_failed")
+
 println("Probability of failure standard deviation: $pf_std")
+println("Probability of model run failure: $pf")
+println("Probability of failure standard deviation: $pf_std")
+
 println("QOI mean: $qoi_mean")
 println("QOI std: $qoi_std")
 println("QOI 95% confidence interval: [$lower_quantile, $upper_quantile]")
