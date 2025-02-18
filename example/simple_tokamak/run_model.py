@@ -98,8 +98,13 @@ with Pool(n_cores) as pool:
         try:
             # This should reraise any exceptions
             random_nuc[i] = r.get()
-        except (OSError, CalledProcessError):
-            warnings.warn("Failed to sample nuclide {}".format(nuc))
+        except (OSError, CalledProcessError) as error:
+            error_msg="{}: {}".format(type(error).__name__, str(error))
+            msg="Failed to sample nuclide {}".format(nuc)
+            msg=msg+"\n"
+            msg=msg+error_msg
+            warnings.warn(msg)
+
 
 # Run openmc with random files
 try:
